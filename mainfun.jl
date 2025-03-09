@@ -1,55 +1,87 @@
+#=
+作者: 元一平
+机构: 电子科技大学机械与电气工程学院
+邮箱: yyp1570364925@gmail.com
+创建日期: 2024-01-20
+最后修改: 2024-01-25
+
+描述: 
+本代码实现了一个完整的电力系统时序运行模拟框架，采用 Julia 100% 实现，功能包含：
+- 传统时序运行模拟技术(Long-term TUC)
+- 频率约束时序运行模拟技术(Long-term FCUC ) 
+- 内嵌频率约束与灵活爬坡约束的时序运行模拟技术(Long-term CCFDUC)
+=#
+
+# 1. 环境设置
 using Pkg
 Pkg.activate("./.pkg")
+# 添加必要的包依赖
 Pkg.add([
-    "Revise", "JuMP", "Gurobi", "Test", "DelimitedFiles", "PlotlyJS", 
-    "LaTeXStrings", "Plots", "JLD", "DataFrames", "Clustering", 
-    "StatsPlots"
-])
+    "Revise", "JuMP", "Gurobi", "Test", "DelimitedFiles", "PlotlyJS", LaTeXStrings, Plots, DataFrames, Clustering, StatsPlots
+# 导入所需包
 using Revise, JuMP, Gurobi, Test, DelimitedFiles, PlotlyJS, LaTeXStrings, Plots, DataFrames, Clustering, StatsPlots
+# 设置绘图后端为GR
 gr()
+# 设置随机数种子以确保结果可重现
 using Random
 Random.seed!(1234)
 
-# Use a loop to include files to reduce redundancy
+# 2. 导入模块文件
+# 通过循环导入各个功能模块
 files_to_include = [
-    "src/formatteddata.jl",
-    "src/renewableenergysimulation.jl",
-    "src/showboundrycase.jl",
-    "src/readdatafromexcel.jl",
-    "src/SUCuccommitmentmodel.jl",
-    "src/FCUCuccommitmentmodel.jl",
-    "src/casesploting.jl",
-    "src/creatfrequencyconstraints.jl",
-    "src/saveresult.jl",
-    "src/BFLib_consideringFRlimit.jl",
-    "src/enhance_FCUCuccommitmentmodel.jl",
-    "src/generatefittingparameters.jl",
-    "src/draw_onlineactivepowerbalance.jl",
-    "src/cal_Diffaggregatedfrequencyparameters.jl",
-    "src/draw_addditionalpower.jl",
-    "src/new_BFLib_consideringFRlimit.jl"
+    # 数据处理相关
+    "src/formatteddata.jl",              # 数据格式化
+    "src/renewableenergysimulation.jl",  # 可再生能源模拟
+    "src/showboundrycase.jl",           # 边界条件展示
+    "src/readdatafromexcel.jl",         # Excel数据读取
+    
+    # 机组组合优化模型
+    "src/SUCuccommitmentmodel.jl",      # 传统机组组合模型
+    "src/FCUCuccommitmentmodel.jl",     # 考虑频率约束的机组组合模型
+    "src/enhance_FCUCuccommitmentmodel.jl", # 增强型频率约束机组组合模型
+    
+    # 频率响应相关
+    "src/creatfrequencyconstraints.jl", # 创建频率约束
+    "src/BFLib_consideringFRlimit.jl",  # 考虑频率响应限制的基础函数库
+    "src/new_BFLib_consideringFRlimit.jl", # 新版频率响应限制函数库
+    
+    # 结果分析与可视化
+    "src/casesploting.jl",              # 案例绘图
+    "src/saveresult.jl",                # 结果保存
+    "src/generatefittingparameters.jl", # 生成拟合参数
+    "src/draw_onlineactivepowerbalance.jl", # 绘制在线有功功率平衡
+    "src/cal_Diffaggregatedfrequencyparameters.jl", # 计算聚合频率参数
+    "src/draw_addditionalpower.jl",     # 绘制额外功率
 ]
-for file in files_to_include
-    include(file)
-end
 
-# Destructure directly from function call for clarity
+# 3. 数据读取与处理
+# 从Excel读取系统参数数据
 UnitsFreqParam, WindsFreqParam, StrogeData, DataGen, GenCost, DataBranch, LoadCurve, DataLoad = readxlssheet();
+# 格式化输入数据
 config_param, units, lines, loads, stroges, NB, NG, NL, ND, NT, NC = forminputdata(
     DataGen, DataBranch, DataLoad, LoadCurve, GenCost, UnitsFreqParam, StrogeData
 );
 
+# 4. 场景生成
+# 生成风电场景
 winds, NW = genscenario(WindsFreqParam, 1);
 
+# 5. 边界条件检查
 boundrycondition(NB, NL, NG, NT, ND, units, loads, lines, winds, stroges);
 
+# 6. 求解不同类型的机组组合优化模型
+# 求解增强型频率约束机组组合模型(CCFDUC)
 e_x₀, e_p₀, e_pᵨ, e_pᵩ, e_seq_sr⁺, e_seq_sr⁻, e_pss_charge_p⁺, e_pss_charge_p⁻, e_su_cost, e_sd_cost, e_prod_cost, e_cost_sr⁺, e_cost_sr⁻ = enhance_FCUC_scucmodel(NT, NB, NG, ND, NC, units, loads, winds, lines, config_param);
-savebalance_result(e_p₀, e_pᵨ, e_pᵩ, e_pss_charge_p⁺, e_pss_charge_p⁻, 3);
 
+# 求解频率约束机组组合模型(FDUC)
 x₀, p₀, pᵨ, pᵩ, seq_sr⁺, seq_sr⁻, pss_charge_p⁺, pss_charge_p⁻, su_cost, sd_cost, prod_cost, cost_sr⁺, cost_sr⁻ = FCUC_scucmodel(NT, NB, NG, ND, NC, units, loads, winds, lines, config_param);
-savebalance_result(p₀, pᵨ, pᵩ, pss_charge_p⁺, pss_charge_p⁻, 2);
 
+# 求解传统机组组合模型(TUC)
 bench_x₀, bench_p₀, bench_pᵨ, bench_pᵩ, bench_seq_sr⁺, bench_seq_sr⁻, bench_pss_charge_p⁺, bench_pss_charge_p⁻, bench_su_cost, bench_sd_cost, bench_prod_cost, bench_cost_sr⁺, bench_cost_sr⁻ = SUC_scucmodel(NT, NB, NG, ND, NC, units, loads, winds, lines, config_param);
+
+# 7. 保存各模型的平衡结果
+savebalance_result(e_p₀, e_pᵨ, e_pᵩ, e_pss_charge_p⁺, e_pss_charge_p⁻, 3);
+savebalance_result(p₀, pᵨ, pᵩ, pss_charge_p⁺, pss_charge_p⁻, 2);
 savebalance_result(bench_p₀, bench_pᵨ, bench_pᵩ, bench_pss_charge_p⁺, bench_pss_charge_p⁻, 1);
 
 #! load curve
